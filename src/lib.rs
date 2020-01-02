@@ -324,3 +324,78 @@ pub mod report {
 
     }
 }
+
+pub mod ui {
+    use std::io;
+    use csv::StringRecord;
+
+    pub struct UI {
+    }
+
+    impl UI {
+        pub fn display_entry(&self, entry: &StringRecord) {
+            println!("{} {} {}", entry.get(0).unwrap(), entry.get(1).unwrap(), entry.get(2).unwrap());
+        }
+
+        pub fn get_type(&self) -> &str {
+            println!("Enter 'p' for personal or 'w' for work");
+
+            let mut choice = String::new();
+            let _ = io::stdin().read_line(&mut choice);
+
+            if choice.trim() == "p" {
+                "personal"
+            } else {
+                "work"
+            }
+        }
+
+        pub fn display_automap(&self, category: &str) {
+            println!("Automagically mapped to {}", category);
+        }
+
+        pub fn display_categories(&self, category_type: &str, categories: &Vec<String>) {
+            println!("Existing {} categories", category_type);
+            println!("");
+            // println!("{:?}", config.personal_categories());
+            let cat_iter = categories.iter();
+            let mut cats_for_output: Vec<String> = Vec::new();
+            for cat in cat_iter {
+                cats_for_output.push(String::from(cat));
+            }
+            cats_for_output.sort();
+            for cat in cats_for_output {
+                println!("{}", cat);
+            }
+        }
+
+        pub fn capture_category(&self) -> String {
+            println!("Enter 'c' to add a category, or enter a pre-existing category");
+
+            let mut category_choice = String::new();
+            let _ = io::stdin().read_line(&mut category_choice);
+
+            if category_choice.trim() == "c" {
+                let mut new_category = String::new();
+                let _ = io::stdin().read_line(&mut new_category);
+
+                new_category
+            } else {
+                category_choice
+            }
+        }
+
+        pub fn capture_pattern(&self) -> Option<String> {
+            println!("Provide a pattern for this category or just hit enter");
+
+            let mut pattern_choice = String::new();
+            let _ = io::stdin().read_line(&mut pattern_choice);
+
+            if pattern_choice.trim() != "" {
+                Some(String::from(pattern_choice.trim()))
+            } else {
+                None
+            }
+        }
+    }
+}
