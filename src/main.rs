@@ -2,22 +2,36 @@ use csv::{Reader, StringRecord};
 use dirs;
 use std::fs;
 use std::env;
-use std::io;
-use std::cmp::PartialEq;
 use std::process::exit;
 use std::collections::HashMap;
-use sha2::{Sha256, Digest};
 use yaml_rust::{Yaml, YamlLoader};
 use yaml_rust::emitter::YamlEmitter;
 use yaml_rust::scanner::ScanError;
 use linked_hash_map::LinkedHashMap;
 use chrono::{NaiveDate, Datelike};
 use chrono::format::ParseError;
-use hex;
-use rust_decimal::Decimal;
-use std::str::FromStr;
 use bank_statement_importer::report::ActivityReport;
+use bank_statement_importer::ui::UI;
 
+#[test]
+fn test_category_equality() {
+    assert_eq!(
+        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
+        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
+               );
+
+    assert_ne!(
+        Category {name: String::from("baz"), patterns: vec![String::from("bar")]},
+        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
+               );
+
+    assert_ne!(
+        Category {name: String::from("foo"), patterns: vec![String::from("baz")]},
+        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
+               );
+}
+
+#[derive(Debug)]
 struct Category {
     name: String,
     patterns: Vec<String>
@@ -33,6 +47,36 @@ impl Category {
             None => false
         }
     }
+}
+
+impl PartialEq for Category {
+    fn eq(&self, other: &Category) -> bool {
+        self.name == other.name && self.patterns == other.patterns
+    }
+}
+
+#[test]
+fn test_adding_categories_to_catalogue() {
+    let mut catalogue = CategoryCatalogue { categories: Vec::new() };
+
+    catalogue.add_category("foo");
+    assert_eq!(catalogue.categories, vec![Category { name: String::from("foo"), patterns: Vec::new() }]);
+
+    catalogue.add_category("bar");
+    assert_eq!(
+        catalogue.categories,
+        vec![
+            Category { name: String::from("foo"), patterns: Vec::new() },
+            Category { name: String::from("bar"), patterns: Vec::new() },
+        ]);
+
+    catalogue.add_category("foo");
+    assert_eq!(
+        catalogue.categories,
+        vec![
+            Category { name: String::from("foo"), patterns: Vec::new() },
+            Category { name: String::from("bar"), patterns: Vec::new() },
+        ]);
 }
 
 struct CategoryCatalogue {
@@ -57,7 +101,18 @@ impl CategoryCatalogue {
     }
 
     fn add_category(&mut self, category: &str) {
-        self.categories.push(Category { name: String::from(category), patterns: Vec::new() });
+        if !self.category_exists(category) {
+            self.categories.push(Category { name: String::from(category), patterns: Vec::new() });
+        }
+    }
+
+    fn category_exists(&self, category: &str) -> bool {
+        let mut iter = self.categories.iter().filter(|c| c.name == category);
+
+        match iter.next() {
+            Some(_) => true,
+            None => false
+        }
     }
 
     fn find_cat(&mut self, category: &str) -> &mut Category{
@@ -244,65 +299,33 @@ fn main() {
     classification.insert(String::from("work"), work_entries);
 
     let mut report = ActivityReport::new();
+    let ui = UI {};
 
     for entry in raw_entries {
-        println!("{}", entry.get(1).unwrap());
-        println!("Enter 'p' for personal or 'w' for work");
+        
+        ui.display_entry(&entry);
 
-        let mut choice = String::new();
-        let _ = io::stdin().read_line(&mut choice);
-
-        let entry_type = if choice.trim() == "p" {
-            "personal"
-        } else {
-            "work"
-        };
+        let entry_type = ui.get_type();
 
         let selected_category = match config.match_category(entry_type, entry.get(1).unwrap()) {
             Some(c) => {
-                println!("Automagically mapped to {}", c.name);
+                ui.display_automap(&c.name);
                 c.name.clone()
             },
             None => {
                     if entry_type == "personal" {
-                        println!("Existing personal categories");
-                        println!("");
-                        println!("{:?}", config.personal_categories());
-                        for cat in config.personal_categories() {
-                            println!("{}", cat);
-                        }
+                        ui.display_categories("personal", &config.personal_categories());
                     } else {
-                        println!("Existing work categories");
-                        println!("");
-                        for cat in config.work_categories() {
-                            println!("{}", cat);
-                        }
+                        ui.display_categories("work", &config.work_categories());
                     }
 
-                    println!("Enter 'c' to add a category, or enter a pre-existing category");
+                    let category = ui.capture_category();
 
-                    let mut category_choice = String::new();
-                    let _ = io::stdin().read_line(&mut category_choice);
+                    config.add_category(entry_type, category.trim());
 
-                    let category = if category_choice.trim() == "c" {
-                        let mut new_category = String::new();
-                        let _ = io::stdin().read_line(&mut new_category);
-
-                        config.add_category(entry_type, new_category.trim());
-
-                        new_category
-                    } else {
-                        category_choice
-                    };
-
-                    println!("Provide a pattern for this category or just hit enter");
-
-                    let mut pattern_choice = String::new();
-                    let _ = io::stdin().read_line(&mut pattern_choice);
-
-                    if pattern_choice.trim() != "" {
+                    if let Some(pattern) = ui.capture_pattern() {
                         let category = config.find_cat(entry_type, category.trim());
-                        category.patterns.push(String::from(pattern_choice.trim()));
+                        category.patterns.push(String::from(pattern));
                     }
 
                     fs::write(&config_path, serialise(&config.export())).expect("Could not write config file");
@@ -325,7 +348,4 @@ fn main() {
 
     println!("Work Expense: {}", report.total("work", true));
     println!("Personal Expense: {}", report.total("personal", true));
-    // let personal_expenditures: Vec<String> = report.personal_expenditure().iter().map(|x| format!("{} {} {}", x.original_entry.get(0).unwrap(), x.original_entry.get(1).unwrap(), x.original_entry.get(2).unwrap())).collect();
-
-    // println!("{:?}", personal_expenditures);
 }
