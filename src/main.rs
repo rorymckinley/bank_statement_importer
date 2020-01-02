@@ -3,14 +3,20 @@ use dirs;
 use std::fs;
 use std::env;
 use std::io;
+use std::cmp::PartialEq;
 use std::process::exit;
 use std::collections::HashMap;
+use sha2::{Sha256, Digest};
 use yaml_rust::{Yaml, YamlLoader};
 use yaml_rust::emitter::YamlEmitter;
 use yaml_rust::scanner::ScanError;
 use linked_hash_map::LinkedHashMap;
 use chrono::{NaiveDate, Datelike};
 use chrono::format::ParseError;
+use hex;
+use rust_decimal::Decimal;
+use std::str::FromStr;
+use bank_statement_importer::report::ActivityReport;
 
 struct Category {
     name: String,
@@ -131,7 +137,7 @@ impl Config {
         let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
         let mut new_categories: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
         let mut personal_categories = Vec::new();
-        let mut work_categories = Vec::new();;
+        let mut work_categories = Vec::new();
         let mut patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
         let mut personal_patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
         let mut work_patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
@@ -155,33 +161,6 @@ impl Config {
     }
 }
 
-struct ExpenditureEntry {
-    entry_type: String,
-    entry_category: String,
-    original_entry: StringRecord
-}
-
-struct ExpenditureReport {
-    entries: Vec<ExpenditureEntry>
-}
-
-impl ExpenditureReport {
-    fn new() -> ExpenditureReport {
-        ExpenditureReport {
-            entries: Vec::new()
-        }
-    }
-
-    fn add_entry(&mut self, entry_type: &str, category: &str, entry: StringRecord) {
-        self.entries.push(
-                ExpenditureEntry { entry_type: String::from(entry_type), entry_category: String::from(category), original_entry: entry }
-            )
-    }
-
-    fn personal_expenditure(&self) -> Vec<&ExpenditureEntry> {
-        self.entries.iter().filter(|x| x.entry_type == "personal" && x.original_entry.get(1).unwrap().parse::<f32>().unwrap() < 0.0).collect()
-    }
-}
 
 fn config_template() -> Yaml {
     let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
@@ -264,7 +243,7 @@ fn main() {
     classification.insert(String::from("personal"), personal_entries);
     classification.insert(String::from("work"), work_entries);
 
-    let mut report = ExpenditureReport::new();
+    let mut report = ActivityReport::new();
 
     for entry in raw_entries {
         println!("{}", entry.get(1).unwrap());
@@ -335,16 +314,18 @@ fn main() {
         };
 
         if entry_type == "personal" && config.personal_categories().contains(&String::from(selected_category.trim())) {
-            report.add_entry(entry_type, selected_category.trim(), entry);
+            report.add_entry(entry_type, selected_category.trim(), &entry);
         } else if entry_type == "work" && config.work_categories().contains(&String::from(selected_category.trim())) {
-            report.add_entry(entry_type, selected_category.trim(), entry);
+            report.add_entry(entry_type, selected_category.trim(), &entry);
         } else {
             println!("Category {} does not exist", selected_category);
             exit(3);
         }
     }
 
-    let personal_expenditures: Vec<String> = report.personal_expenditure().iter().map(|x| format!("{} {} {}", x.original_entry.get(0).unwrap(), x.original_entry.get(1).unwrap(), x.original_entry.get(2).unwrap())).collect();
+    println!("Work Expense: {}", report.total("work", true));
+    println!("Personal Expense: {}", report.total("personal", true));
+    // let personal_expenditures: Vec<String> = report.personal_expenditure().iter().map(|x| format!("{} {} {}", x.original_entry.get(0).unwrap(), x.original_entry.get(1).unwrap(), x.original_entry.get(2).unwrap())).collect();
 
-    println!("{:?}", personal_expenditures);
+    // println!("{:?}", personal_expenditures);
 }
