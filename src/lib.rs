@@ -328,13 +328,14 @@ pub mod report {
 pub mod ui {
     use std::io;
     use csv::StringRecord;
+    use crate::raw_entry::RawEntry;
 
     pub struct UI {
     }
 
     impl UI {
-        pub fn display_entry(&self, entry: &StringRecord) {
-            println!("{} {} {}", entry.get(0).unwrap(), entry.get(1).unwrap(), entry.get(2).unwrap());
+        pub fn display_entry(&self, entry: &RawEntry) {
+            println!("{}", entry.to_string());
         }
 
         pub fn get_type(&self) -> &str {
@@ -396,6 +397,100 @@ pub mod ui {
             } else {
                 None
             }
+        }
+    }
+}
+
+pub mod raw_entry {
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+    use sha2::{Sha256, Digest};
+    use csv::{StringRecord};
+    use chrono::{NaiveDate};
+
+#[test]
+    fn test_instantiate_raw_entry_from_outbound_string_record() {
+        let record = StringRecord::from(vec!["  20191101  ", "  foo bar  ", "  -191.60  ", "  200.00  "]);
+
+        let mut hasher = Sha256::new();
+        hasher.input("20191101foo bar-191.60200.00");
+        let fingerprint = hex::encode(hasher.result());
+
+        let expected_entry = RawEntry {
+            description: String::from("foo bar"),
+            amount: Decimal::from_str("191.60").unwrap(),
+            direction: String::from("outbound"),
+            balance: Decimal::from_str("200.00").unwrap(),
+            date: NaiveDate::from_ymd(2019,11,1),
+            fingerprint: fingerprint
+        };
+        let raw_entry = RawEntry::new(record);
+
+        assert_eq!(raw_entry, expected_entry)
+    }
+
+#[test]
+    fn test_instantiate_raw_entry_from_inbound_string_record() {
+        let record = StringRecord::from(vec!["  20191101  ", "  foo bar  ", "  191.60  ", "  200.00  "]);
+        let raw_entry = RawEntry::new(record);
+
+        assert_eq!(raw_entry.direction, String::from("inbound"));
+    }
+
+#[test]
+    fn test_raw_entry_display() {
+        let entry = RawEntry {
+            description: String::from("foo bar"),
+            amount: Decimal::from_str("191.60").unwrap(),
+            direction: String::from("outbound"),
+            balance: Decimal::from_str("200.00").unwrap(),
+            date: NaiveDate::from_ymd(2019,11,1),
+            fingerprint: String::from("abc123")
+        };
+
+        assert_eq!(entry.to_string(), "2019-11-01 outbound foo bar 191.60 200.00");
+    }
+
+#[derive(Debug)]
+#[derive(PartialEq)]
+    pub struct RawEntry {
+        pub description: String,
+        amount: Decimal,
+        pub direction: String,
+        balance: Decimal,
+        pub date: NaiveDate,
+        fingerprint: String
+    }
+
+    impl RawEntry {
+        pub fn new(csv_record: StringRecord) -> RawEntry {
+            let amount: f32 = csv_record.get(2).unwrap().trim().parse().unwrap();
+
+            let mut hasher = Sha256::new();
+            hasher.input(csv_record.get(0).unwrap().trim());
+            hasher.input(csv_record.get(1).unwrap().trim());
+            hasher.input(csv_record.get(2).unwrap().trim());
+            hasher.input(csv_record.get(3).unwrap().trim());
+
+            RawEntry {
+                description: String::from(csv_record.get(1).unwrap().trim()),
+                amount: Decimal::from_str(&format!("{}", amount.abs())).unwrap(),
+                direction: String::from(if amount < 0.0 { "outbound" } else { "inbound" }),
+                balance: Decimal::from_str(csv_record.get(3).unwrap().trim()).unwrap(),
+                date: NaiveDate::parse_from_str(csv_record.get(0).unwrap().trim(), "%Y%m%d").unwrap(),
+                fingerprint: hex::encode(hasher.result())
+            }
+        }
+
+        pub fn to_string(&self) -> String{
+            format!(
+                "{} {} {} {} {}",
+                self.date.format("%Y-%m-%d").to_string(),
+                self.direction,
+                self.description,
+                self.amount,
+                self.balance
+                )
         }
     }
 }
