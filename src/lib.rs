@@ -355,8 +355,8 @@ pub mod ui {
             println!("Automagically mapped to {}", category);
         }
 
-        pub fn display_categories(&self, category_type: &str, categories: &Vec<String>) {
-            println!("Existing {} categories", category_type);
+        pub fn display_categories(&self, categories: &Vec<String>) {
+            println!("Existing categories");
             println!("");
             // println!("{:?}", config.personal_categories());
             let cat_iter = categories.iter();
@@ -370,20 +370,164 @@ pub mod ui {
             }
         }
 
-        pub fn capture_category(&self) -> String {
-            println!("Enter 'c' to add a category, or enter a pre-existing category");
-
+        pub fn capture_category(&self, existing_categories: &Vec<String>) -> String {
             let mut category_choice = String::new();
-            let _ = io::stdin().read_line(&mut category_choice);
+            
+            loop {
+                println!("Enter the existing category, or leave blank to add a new category:");
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read category input");
 
-            if category_choice.trim() == "c" {
-                let mut new_category = String::new();
-                let _ = io::stdin().read_line(&mut new_category);
+                if input.trim() == "" {
+                    let mut new_cat = String::new();
+                    println!("New category:");
+                    io::stdin().read_line(&mut new_cat).expect("Could not read new category");
 
-                new_category
-            } else {
-                category_choice
+                    if new_cat.trim() == "" {
+                        println!("That category is invalid. Please try again.");
+                        continue;
+                    } else {
+                        category_choice = String::from(input.trim());
+                        break;
+                    }
+                } else {
+                  if existing_categories.contains(&String::from(input.trim())) {
+                        category_choice = String::from(input.trim());
+                        break;
+                  } else {
+                      println!("The category {} does not exist. Please try again.", String::from(input.trim()));
+                      continue;
+                  }
+                }
             }
+
+            category_choice
+        }
+
+        pub fn is_transfer(&self) -> bool {
+            let is_transfer;
+
+            loop {
+                println!("Does this entry represent a transfer between accounts? [n/y]");
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read transfer classification");
+                let trimmed_input: &str = input.trim();
+
+                if trimmed_input == "" || trimmed_input == "n" {
+                    is_transfer = false;
+                    break;
+                } else if trimmed_input == "y" {
+                    is_transfer = true;
+                    break;
+                } else {
+                    println!("That is not a valid selection, please try again");
+                    continue;
+                }
+            }
+
+            is_transfer
+        }
+
+        pub fn is_personal(&self) -> bool {
+            let is_personal;
+
+            loop {
+                println!("Is this a work or a personal entry [p/w]?");
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read work/personal");
+                let trimmed_input: &str = input.trim();
+
+                if trimmed_input == "w" {
+                    is_personal = false;
+                    break;
+                } else if trimmed_input == "p" {
+                    is_personal = true;
+                    break;
+                } else {
+                    println!("That is not a valid selection, please try again");
+                    continue;
+                }
+            }
+
+            is_personal
+        }
+
+        pub fn create_pattern(&self) -> bool {
+            let create_pattern;
+
+            loop {
+                println!("Would you like to create a pattern from this entry [y/n]?");
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read create pattern");
+                let trimmed_input: &str = input.trim();
+
+                if trimmed_input == "y" {
+                    create_pattern = true;
+                    break;
+                } else if trimmed_input == "n" {
+                    create_pattern = false;
+                    break;
+                } else {
+                    println!("That is not a valid selection, please try again");
+                    continue;
+                }
+            }
+
+            create_pattern
+        }
+
+        pub fn snippet(&self) -> String {
+            let snippet;
+
+            loop {
+                println!("Please provide the snippet");
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read snippet");
+                let trimmed_input: &str = input.trim();
+
+                if trimmed_input != "" {
+                    snippet = String::from(trimmed_input);
+                    break;
+                } else {
+                    println!("That is not a valid selection, please try again");
+                    continue;
+                }
+            }
+
+            snippet
+        }
+
+        pub fn require_confirmation(&self, is_personal: bool) -> bool {
+            let require_confirmation;
+
+            loop {
+                let assignment = match is_personal {
+                    true => "personal",
+                    false => "work",
+                };
+                println!("Should this always be assigned to {} [y/n]?", assignment);
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).expect("Could not read require_confirmation");
+                let trimmed_input: &str = input.trim();
+
+                if trimmed_input == "y" {
+                    require_confirmation = true;
+                    break;
+                } else if trimmed_input == "n" {
+                    require_confirmation = false;
+                    break;
+                } else {
+                    println!("That is not a valid selection, please try again");
+                    continue;
+                }
+            }
+
+            require_confirmation
         }
 
         pub fn capture_pattern(&self) -> Option<String> {
@@ -408,6 +552,13 @@ pub mod raw_entry {
     use csv::{StringRecord};
     use chrono::{NaiveDate};
 
+    #[derive(Debug)]
+    #[derive(PartialEq)]
+    pub enum Direction {
+        Outbound,
+        Inbound
+    }
+
 #[test]
     fn test_instantiate_raw_entry_from_outbound_string_record() {
         let record = StringRecord::from(vec!["  20191101  ", "  foo bar  ", "  -191.60  ", "  200.00  "]);
@@ -419,7 +570,7 @@ pub mod raw_entry {
         let expected_entry = RawEntry {
             description: String::from("foo bar"),
             amount: Decimal::from_str("191.60").unwrap(),
-            direction: String::from("outbound"),
+            direction: Direction::Outbound,
             balance: Decimal::from_str("200.00").unwrap(),
             date: NaiveDate::from_ymd(2019,11,1),
             fingerprint: fingerprint
@@ -434,7 +585,7 @@ pub mod raw_entry {
         let record = StringRecord::from(vec!["  20191101  ", "  foo bar  ", "  191.60  ", "  200.00  "]);
         let raw_entry = RawEntry::new(record);
 
-        assert_eq!(raw_entry.direction, String::from("inbound"));
+        assert_eq!(raw_entry.direction, Direction::Inbound);
     }
 
 #[test]
@@ -442,7 +593,7 @@ pub mod raw_entry {
         let entry = RawEntry {
             description: String::from("foo bar"),
             amount: Decimal::from_str("191.60").unwrap(),
-            direction: String::from("outbound"),
+            direction: Direction::Outbound,
             balance: Decimal::from_str("200.00").unwrap(),
             date: NaiveDate::from_ymd(2019,11,1),
             fingerprint: String::from("abc123")
@@ -456,7 +607,7 @@ pub mod raw_entry {
     pub struct RawEntry {
         pub description: String,
         amount: Decimal,
-        pub direction: String,
+        pub direction: Direction,
         balance: Decimal,
         pub date: NaiveDate,
         fingerprint: String
@@ -475,7 +626,7 @@ pub mod raw_entry {
             RawEntry {
                 description: String::from(csv_record.get(1).unwrap().trim()),
                 amount: Decimal::from_str(&format!("{}", amount.abs())).unwrap(),
-                direction: String::from(if amount < 0.0 { "outbound" } else { "inbound" }),
+                direction: (if amount < 0.0 { Direction::Outbound } else { Direction::Inbound }),
                 balance: Decimal::from_str(csv_record.get(3).unwrap().trim()).unwrap(),
                 date: NaiveDate::parse_from_str(csv_record.get(0).unwrap().trim(), "%Y%m%d").unwrap(),
                 fingerprint: hex::encode(hasher.result())
@@ -486,7 +637,10 @@ pub mod raw_entry {
             format!(
                 "{} {} {} {} {}",
                 self.date.format("%Y-%m-%d").to_string(),
-                self.direction,
+                match self.direction {
+                    Direction::Outbound => "outbound",
+                    Direction::Inbound => "inbound",
+                },
                 self.description,
                 self.amount,
                 self.balance

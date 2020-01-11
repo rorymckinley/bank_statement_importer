@@ -12,7 +12,7 @@ use chrono::{NaiveDate, Datelike};
 use chrono::format::ParseError;
 use bank_statement_importer::report::ActivityReport;
 use bank_statement_importer::ui::UI;
-use bank_statement_importer::raw_entry::RawEntry;
+use bank_statement_importer::raw_entry::{RawEntry, Direction};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use sha2::{Sha256, Digest};
@@ -288,11 +288,11 @@ impl NewConfig {
     }
 
     fn find_pattern(&self, entry: &RawEntry) -> Option<&Pattern> {
-        let patterns = match &entry.direction[..] {
-            "outbound" => {
+        let patterns = match entry.direction {
+            Direction::Outbound => {
                 &self.outbound_patterns
             },
-            "inbound" => {
+            Direction::Inbound => {
                 &self.inbound_patterns
             }
             _ => &self.outbound_patterns
@@ -400,6 +400,22 @@ impl Config {
     }
 }
 
+struct PatternOverride {
+    is_personal: bool
+}
+
+enum Sphere {
+    Personal,
+    Work
+}
+
+enum Classification<'a> {
+    ExistingPattern(&'a Pattern, Option<PatternOverride>),
+    NewPattern(Pattern),
+    NoPatternInbound {category: String, assign_as_income: bool},
+    NoPatternOutbound {category: String, assign_as_expense: bool, assign_as_personal: bool}
+}
+
 
 fn config_template() -> Yaml {
     let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
@@ -503,12 +519,104 @@ fn main() {
 
         ui.display_entry(&entry);
 
-        match new_config.find_pattern(&entry) {
+        let classification = match new_config.find_pattern(&entry) {
             Some(p) => {
+                Classification::ExistingPattern(&p, None)
             },
             None => {
+                let is_personal: Option<bool>;
+                ui.display_categories(&new_config.categories);
+
+                let category = ui.capture_category(&new_config.categories);
+
+                let is_transfer = ui.is_transfer();
+                let sphere = match is_transfer {
+                    true => {
+                        Sphere::Personal
+                    },
+                    false => {
+                        match entry.direction {
+                            Direction::Outbound => {
+                                match ui.is_personal() {
+                                    true => Sphere::Personal,
+                                    false => Sphere::Work
+                                }
+                            },
+                            Direction::Inbound => {
+                                Sphere::Personal
+                            }
+                        }
+                    }
+                };
+
+                let create_pattern = ui.create_pattern();
+
+                match create_pattern {
+                    false => {
+                        match entry.direction {
+                            Direction::Outbound => {
+                                Classification::NoPatternOutbound {
+                                    category: category,
+                                    assign_as_expense: !is_transfer,
+                                    assign_as_personal: match sphere {
+                                        Sphere::Personal => true,
+                                        Sphere::Work => false
+                                    },
+                                }
+                            },
+                            Direction::Inbound => {
+                                Classification::NoPatternInbound {
+                                    category: category,
+                                    assign_as_income: !is_transfer,
+                                }
+                            }
+                        }
+                    },
+                    true => {
+                        let snippet = ui.snippet();
+                        let require_confirmation = match entry.direction {
+                            Direction::Inbound => false,
+                            Direction::Outbound => {
+                                match is_transfer {
+                                    true => false,
+                                    false => {
+                                        let is_personal = match sphere {
+                                            Sphere::Personal => true,
+                                            Sphere::Work => false
+                                        };
+                                        ui.require_confirmation(is_personal)
+                                    }
+                                }
+                            }
+                        };
+                        let new_pattern = match entry.direction {
+                            Direction::Outbound => {
+                                Pattern::Outbound {
+                                    snippet: snippet,
+                                    category: category,
+                                    assign_as_expense: !is_transfer,
+                                    assign_as_personal: match sphere {
+                                        Sphere::Personal => true,
+                                        Sphere::Work => false
+                                    },
+                                    require_confirmation: require_confirmation
+                                }
+                            },
+                            Direction::Inbound => {
+                                Pattern::Inbound {
+                                    snippet: snippet,
+                                    category: category,
+                                    assign_as_income: !is_transfer,
+                                }
+                            }
+                        };
+
+                        Classification::NewPattern(new_pattern)
+                    }
+                }
             }
-        }
+
+        };
     //
     //     let entry_type = ui.get_type();
     //
