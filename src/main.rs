@@ -10,7 +10,7 @@ use yaml_rust::scanner::ScanError;
 use linked_hash_map::LinkedHashMap;
 use chrono::{NaiveDate, Datelike};
 use chrono::format::ParseError;
-use bank_statement_importer::report::ActivityReport;
+// use bank_statement_importer::report::ActivityReport;
 use bank_statement_importer::ui::UI;
 use bank_statement_importer::raw_entry::{RawEntry, Direction};
 use rust_decimal::Decimal;
@@ -260,6 +260,7 @@ fn test_matching_patterns() {
 }
 
 
+#[derive(Debug)]
 struct NewConfig {
     categories: Vec<String>,
     inbound_patterns: Vec<Pattern>,
@@ -305,6 +306,59 @@ impl NewConfig {
             entry.description.contains(snippet)
         });
         matched_patterns.next()
+    }
+
+    fn export(&self) -> Yaml {
+        let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
+        let categories_yaml: Vec<Yaml> = self.categories.iter().map(|c| Yaml::from_str(c)).collect();
+
+        let inbound_patterns: Vec<Yaml> = self.inbound_patterns.iter().map(|p| {
+            match p {
+                Pattern::Inbound { snippet, category, assign_as_income } => {
+                    let mut as_hash: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
+                    as_hash.insert(Yaml::from_str("snippet"), Yaml::from_str(snippet));
+                    as_hash.insert(Yaml::from_str("category"), Yaml::from_str(category));
+                    as_hash.insert(Yaml::from_str("assign_as_income"), Yaml::Boolean(*assign_as_income));
+                    Yaml::Hash(as_hash)
+                },
+                Pattern::Outbound { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                    let mut as_hash: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
+                    as_hash.insert(Yaml::from_str("snippet"), Yaml::from_str(snippet));
+                    as_hash.insert(Yaml::from_str("category"), Yaml::from_str(category));
+                    as_hash.insert(Yaml::from_str("assign_as_expense"), Yaml::Boolean(*assign_as_expense));
+                    as_hash.insert(Yaml::from_str("assign_as_personal"), Yaml::Boolean(*assign_as_personal));
+                    as_hash.insert(Yaml::from_str("require_confirmation"), Yaml::Boolean(*require_confirmation));
+                    Yaml::Hash(as_hash)
+                }
+            }
+        }).collect();
+
+        let outbound_patterns: Vec<Yaml> = self.outbound_patterns.iter().map(|p| {
+            match p {
+                Pattern::Inbound { snippet, category, assign_as_income } => {
+                    let mut as_hash: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
+                    as_hash.insert(Yaml::from_str("snippet"), Yaml::from_str(snippet));
+                    as_hash.insert(Yaml::from_str("category"), Yaml::from_str(category));
+                    as_hash.insert(Yaml::from_str("assign_as_income"), Yaml::Boolean(*assign_as_income));
+                    Yaml::Hash(as_hash)
+                },
+                Pattern::Outbound { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                    let mut as_hash: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
+                    as_hash.insert(Yaml::from_str("snippet"), Yaml::from_str(snippet));
+                    as_hash.insert(Yaml::from_str("category"), Yaml::from_str(category));
+                    as_hash.insert(Yaml::from_str("assign_as_expense"), Yaml::Boolean(*assign_as_expense));
+                    as_hash.insert(Yaml::from_str("assign_as_personal"), Yaml::Boolean(*assign_as_personal));
+                    as_hash.insert(Yaml::from_str("require_confirmation"), Yaml::Boolean(*require_confirmation));
+                    Yaml::Hash(as_hash)
+                }
+            }
+        }).collect();
+
+        config.insert(Yaml::from_str("categories"), Yaml::Array(categories_yaml));
+        config.insert(Yaml::from_str("inbound_patterns"), Yaml::Array(inbound_patterns));
+        config.insert(Yaml::from_str("outbound_patterns"), Yaml::Array(outbound_patterns));
+
+        Yaml::Hash(config)
     }
 }
 
@@ -400,22 +454,244 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 struct PatternOverride {
     is_personal: bool
 }
 
+#[derive(Debug, Clone, PartialEq)]
 enum Sphere {
     Personal,
     Work
 }
 
+#[ derive(Debug) ]
 enum Classification<'a> {
     ExistingPattern(&'a Pattern, Option<PatternOverride>),
-    NewPattern(Pattern),
+    NewPatternInbound {snippet: String, category: String, assign_as_income: bool},
+    NewPatternOutbound {snippet: String, category: String, assign_as_expense: bool, assign_as_personal: bool, require_confirmation: bool },
     NoPatternInbound {category: String, assign_as_income: bool},
     NoPatternOutbound {category: String, assign_as_expense: bool, assign_as_personal: bool}
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum EntryType {
+    Expense,
+    Income,
+    Transfer
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CategorisedEntry {
+    sphere: Sphere,
+    category: String,
+    description: String,
+    amount: Decimal,
+    entry_type: EntryType,
+    date: NaiveDate
+}
+
+
+// Test Setup function
+fn create_expense(category: &str, description: &str, sphere: Sphere) -> CategorisedEntry {
+    CategorisedEntry {
+        sphere: sphere,
+        category: String::from(category),
+        amount: Decimal::from_str("100.00").unwrap(),
+        description: String::from(description),
+        entry_type: EntryType::Expense,
+        date: NaiveDate::from_ymd(2019,11,1)
+    }
+}
+
+fn create_income(category: &str, description: &str, sphere: Sphere) -> CategorisedEntry {
+    CategorisedEntry {
+        sphere: sphere,
+        category: String::from(category),
+        amount: Decimal::from_str("100.00").unwrap(),
+        description: String::from(description),
+        entry_type: EntryType::Income,
+        date: NaiveDate::from_ymd(2019,11,1)
+    }
+}
+
+fn create_transfer(category: &str, description: &str, sphere: Sphere) -> CategorisedEntry {
+    CategorisedEntry {
+        sphere: sphere,
+        category: String::from(category),
+        amount: Decimal::from_str("100.00").unwrap(),
+        description: String::from(description),
+        entry_type: EntryType::Transfer,
+        date: NaiveDate::from_ymd(2019,11,1)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct ReportCategory<'a> {
+    description: String,
+    entries: Vec<&'a CategorisedEntry>
+}
+
+#[test]
+fn test_translate_activity_report_into_categorised_activity_report() {
+    let personal_cat_one_expense_one = create_expense("cat_one", "p_c_1_e_1", Sphere::Personal);
+    let personal_cat_one_expense_two = create_expense("cat_one", "p_c_1_e_2", Sphere::Personal);
+    let personal_cat_one_income_one = create_income("cat_one", "p_c_1_i_1", Sphere::Personal);
+    let personal_cat_one_transfer_one = create_transfer("cat_one", "p_c_1_t_1", Sphere::Personal);
+
+    let personal_cat_two_expense_one = create_expense("cat_two", "p_c_2_e_1", Sphere::Personal);
+    let personal_cat_two_income_one = create_income("cat_two", "p_c_2_i_1", Sphere::Personal);
+    let personal_cat_two_income_two = create_transfer("cat_two", "p_c_2_i_1", Sphere::Personal);
+
+    let work_cat_one_expense_one = create_expense("cat_one", "w_c_1_e_1", Sphere::Work);
+    let work_cat_one_expense_two = create_expense("cat_one", "w_c_1_e_2", Sphere::Work);
+    let work_cat_one_income_one = create_income("cat_one", "w_c_1_i_1", Sphere::Work);
+    let work_cat_one_transfer_one = create_transfer("cat_one", "w_c_1_t_1", Sphere::Work);
+
+    let work_cat_two_expense_one = create_expense("cat_two", "w_c_2_e_1", Sphere::Work);
+    let work_cat_two_income_one = create_income("cat_two", "w_c_2_i_1", Sphere::Work);
+    let work_cat_two_income_two = create_transfer("cat_two", "w_c_2_i_1", Sphere::Work);
+
+    let cat_report = CategorisedActivityReport {
+        personal: vec![
+            ReportCategory {
+                description: String::from("cat_one"),
+                entries: vec![
+                   &personal_cat_one_expense_one,      
+                   &personal_cat_one_expense_two,      
+                   &personal_cat_one_income_one,      
+                   &personal_cat_one_transfer_one,      
+                ]
+            },
+            ReportCategory {
+                description: String::from("cat_two"),
+                entries: vec![
+                    &personal_cat_two_expense_one,
+                    &personal_cat_two_income_one,
+                    &personal_cat_two_income_two
+                ]
+            }
+        ],
+        work: vec![
+            ReportCategory {
+                description: String::from("cat_one"),
+                entries: vec![
+                   &work_cat_one_expense_one,      
+                   &work_cat_one_expense_two,      
+                   &work_cat_one_income_one,      
+                   &work_cat_one_transfer_one,      
+                ]
+            },
+            ReportCategory {
+                description: String::from("cat_two"),
+                entries: vec![
+                    &work_cat_two_expense_one,
+                    &work_cat_two_income_one,
+                    &work_cat_two_income_two
+                ]
+            }
+        ],
+    };
+
+    let report = ActivityReport {
+        entries: vec![
+            personal_cat_one_expense_one.clone(),
+            personal_cat_two_expense_one.clone(),
+            work_cat_one_expense_one.clone(),
+            work_cat_two_expense_one.clone(),
+            personal_cat_one_expense_two.clone(),
+            personal_cat_two_income_one.clone(),
+            work_cat_one_expense_two.clone(),
+            work_cat_two_income_one.clone(),
+            personal_cat_one_income_one.clone(),
+            personal_cat_two_income_two.clone(),
+            work_cat_one_income_one.clone(),
+            work_cat_two_income_two.clone(),
+            work_cat_one_transfer_one.clone(),
+            personal_cat_one_transfer_one.clone()
+        ]
+    };
+
+    assert_eq!(cat_report,
+               CategorisedActivityReport::new(
+                   &report, &vec![String::from("cat_one"), String::from("cat_two"), String::from("cat_three")]
+                   )
+              );
+}
+
+#[derive(Debug, PartialEq)]
+struct CategorisedActivityReport<'a> {
+    personal: Vec<ReportCategory<'a>>,
+    work: Vec<ReportCategory<'a>>
+}
+
+impl<'a> CategorisedActivityReport<'a> {
+    fn new<'b>(report: &'b ActivityReport, categories: &Vec<String>) -> CategorisedActivityReport<'b> {
+        let mut work_categories = Vec::new();
+        let mut personal_categories = Vec::new();
+
+        for cat in categories {
+            let mut work_entries: Vec<&CategorisedEntry> = Vec::new();
+            let mut personal_entries: Vec<&CategorisedEntry> = Vec::new();
+            let mut iter = &mut report.entries.iter().filter(|x| &x.category == cat);
+            loop {
+                match iter.next() {
+                    Some(entry) => {
+                        match entry.sphere  {
+                            Sphere::Personal => personal_entries.push(entry),
+                            Sphere::Work => work_entries.push(entry)
+                        }
+                    },
+                    None => break
+                }
+            };
+            if work_entries.len() > 0 {
+                work_categories.push(ReportCategory { description: String::from(cat), entries: work_entries });
+            }
+            if personal_entries.len() > 0 {
+                personal_categories.push(ReportCategory { description: String::from(cat), entries: personal_entries });
+            }
+        };
+        CategorisedActivityReport {
+            work: work_categories,
+            personal: personal_categories
+        }
+    }
+}
+
+struct ActivityReport {
+    entries: Vec<CategorisedEntry>
+}
+
+impl ActivityReport {
+    fn total_personal(&self) -> Decimal {
+        self.entries.iter().filter(|x| {
+            match x.sphere {
+                Sphere::Personal  => {
+                    match x.entry_type {
+                        EntryType::Expense => true,
+                        _ => false
+                    }
+                },
+                Sphere::Work => false
+            }
+        }).map(|x| x.amount).sum()
+    }
+
+    fn total_work(&self) -> Decimal {
+        self.entries.iter().filter(|x| {
+            match x.sphere {
+                Sphere::Work  => {
+                    match x.entry_type {
+                        EntryType::Expense => true,
+                        _ => false
+                    }
+                },
+                Sphere::Personal => false
+            }
+        }).map(|x| x.amount).sum()
+    }
+}
 
 fn config_template() -> Yaml {
     let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
@@ -473,15 +749,20 @@ fn main() {
     let mut config_path_new = dirs::home_dir().expect("Can't find home dir");
     config_path_new.push(".bank_statement_importer.yml.new");
 
-    if config_path.exists() {
-        println!("Config exists at {:?}", config_path);
-    } else {
-        fs::write(&config_path, serialise(&config_template())).expect("Could not write config file");
-        println!("Config created at {:?}", config_path);
-    }
+    // if config_path.exists() {
+    //     println!("Config exists at {:?}", config_path);
+    // } else {
+    //     fs::write(&config_path, serialise(&config_template())).expect("Could not write config file");
+    //     println!("Config created at {:?}", config_path);
+    // }
 
     //new 
-    fs::write(&config_path_new, serialise(&Config::template())).expect("Could not write new config file");
+    if config_path_new.exists() {
+        println!("Config exists at {:?}", config_path);
+    } else {
+        fs::write(&config_path_new, serialise(&Config::template())).expect("Could not write new config file");
+        println!("Config created at {:?}", config_path_new);
+    }
 
     let mut config = deserialise(fs::read_to_string(&config_path).expect("Could not read config file")).expect("Could not parse config contents");
     let mut new_config = deser(fs::read_to_string(&config_path_new).expect("Could not read new config file")).unwrap();
@@ -504,24 +785,40 @@ fn main() {
             }
         }
     }
-    //
-    // let mut classification = HashMap::new();
-    // let personal_entries: HashMap<String, Vec<f32>> = HashMap::new();
-    // let work_entries: HashMap<String, Vec<f32>> = HashMap::new();
-    // classification.insert(String::from("personal"), personal_entries);
-    // classification.insert(String::from("work"), work_entries);
-    //
-    let mut report = ActivityReport::new();
+
     let ui = UI {};
     let mut processed_fingerprints: Vec<String> = Vec::new();
+    let mut report = ActivityReport { entries: Vec::new() };
 
     for entry in raw_entries {
 
         ui.display_entry(&entry);
 
+        if processed_fingerprints.contains(&entry.fingerprint) {
+            ui.display_duplicate();
+            if ui.skip_duplicate() {
+                ui.skipping_duplicate();
+                continue;
+            }
+        }
+
         let classification = match new_config.find_pattern(&entry) {
             Some(p) => {
-                Classification::ExistingPattern(&p, None)
+                match p {
+                    Pattern::Inbound { snippet, category, assign_as_income } => Classification::ExistingPattern(&p, None),
+                    Pattern::Outbound  { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                        let sphere_override = match require_confirmation {
+                            true => {
+                                match ui.sphere_override(assign_as_personal) {
+                                    true => Some(PatternOverride { is_personal: !assign_as_personal }),
+                                    false => None,
+                                }
+                            }
+                            false => None
+                        };
+                        Classification::ExistingPattern(&p, sphere_override)
+                    }
+                }
             },
             None => {
                 let is_personal: Option<bool>;
@@ -589,11 +886,11 @@ fn main() {
                                 }
                             }
                         };
-                        let new_pattern = match entry.direction {
+                        match entry.direction {
                             Direction::Outbound => {
-                                Pattern::Outbound {
+                                Classification::NewPatternOutbound {
                                     snippet: snippet,
-                                    category: category,
+                                    category: category.clone(),
                                     assign_as_expense: !is_transfer,
                                     assign_as_personal: match sphere {
                                         Sphere::Personal => true,
@@ -603,20 +900,144 @@ fn main() {
                                 }
                             },
                             Direction::Inbound => {
-                                Pattern::Inbound {
+                                Classification::NewPatternInbound {
                                     snippet: snippet,
                                     category: category,
                                     assign_as_income: !is_transfer,
                                 }
                             }
-                        };
+                        }
 
-                        Classification::NewPattern(new_pattern)
                     }
                 }
             }
 
         };
+
+        println!("{:?}", classification);
+        let cat_entry = match classification {
+            Classification::ExistingPattern(pattern, pattern_override_option) => {
+                let sphere = match pattern_override_option {
+                    Some(pattern_override) => {
+                        if pattern_override.is_personal { Sphere::Personal } else { Sphere::Work }
+                    },
+                    None => {
+                        match pattern {
+                            Pattern::Inbound  { snippet, category, assign_as_income } => { Sphere::Personal },
+                            Pattern::Outbound { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                                if *assign_as_personal { Sphere::Personal } else { Sphere::Work }
+                            }
+                        }
+                        
+                    }
+                };
+                match pattern {
+                    Pattern::Inbound  { snippet, category, assign_as_income } => {
+                        CategorisedEntry {
+                            sphere,
+                            category: category.clone(),
+                            description: entry.description,
+                            amount: entry.amount,
+                            entry_type: if *assign_as_income { EntryType::Income } else { EntryType::Transfer },
+                            date: entry.date
+                        }
+                    },
+                    Pattern::Outbound { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                        CategorisedEntry {
+                            sphere,
+                            category: category.clone(),
+                            description: entry.description,
+                            amount: entry.amount,
+                            entry_type: if *assign_as_expense { EntryType::Expense } else { EntryType::Transfer },
+                            date: entry.date
+                        }
+                    }
+                }
+            },
+            Classification::NewPatternInbound { snippet, category, assign_as_income } => {
+                if !new_config.categories.contains(&category) {
+                    new_config.categories.push(category.clone());
+                }
+
+                let pattern = Pattern::Inbound {
+                    snippet: snippet.clone(),
+                    category: category.clone(),
+                    assign_as_income: assign_as_income.clone()
+                };
+
+                new_config.inbound_patterns.push(pattern);
+
+                CategorisedEntry {
+                    sphere: Sphere::Personal,
+                    category: category,
+                    description: entry.description,
+                    amount: entry.amount,
+                    entry_type: if assign_as_income { EntryType::Income } else { EntryType::Transfer },
+                    date: entry.date
+                }
+            },
+            Classification::NewPatternOutbound { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
+                if !new_config.categories.contains(&category) {
+                    new_config.categories.push(category.clone());
+                }
+
+                let pattern = Pattern::Outbound {
+                    snippet: snippet.clone(),
+                    category: category.clone(),
+                    assign_as_expense: assign_as_expense,
+                    assign_as_personal: assign_as_personal,
+                    require_confirmation: require_confirmation,
+                };
+
+                new_config.outbound_patterns.push(pattern);
+
+                CategorisedEntry {
+                    sphere: if assign_as_personal { Sphere::Personal } else { Sphere::Work },
+                    category: category,
+                    description: entry.description,
+                    amount: entry.amount,
+                    entry_type: if assign_as_expense { EntryType::Income } else { EntryType::Transfer },
+                    date: entry.date
+                }
+            },
+            Classification::NoPatternInbound { category, assign_as_income } => {
+                if !new_config.categories.contains(&category) {
+                    new_config.categories.push(category.clone());
+                }
+
+                CategorisedEntry {
+                    sphere: Sphere::Personal,
+                    category: category,
+                    description: entry.description,
+                    amount: entry.amount,
+                    entry_type: if assign_as_income { EntryType::Income } else { EntryType::Transfer },
+                    date: entry.date
+                }
+            },
+            Classification::NoPatternOutbound { category, assign_as_expense, assign_as_personal } => {
+                if !new_config.categories.contains(&category) {
+                    new_config.categories.push(category.clone());
+                }
+
+                CategorisedEntry {
+                    sphere: if assign_as_personal { Sphere::Personal } else { Sphere::Work },
+                    category: category,
+                    description: entry.description,
+                    amount: entry.amount,
+                    entry_type: if assign_as_expense { EntryType::Expense } else { EntryType::Transfer },
+                    date: entry.date
+                }
+            }
+        };
+
+        println!("{:?}", cat_entry);
+        report.entries.push(cat_entry);
+
+        // TODO Find  better way to do this
+        processed_fingerprints.push(entry.fingerprint);
+
+        fs::write(&config_path_new, serialise(&new_config.export())).expect("Could not write config file");
+        new_config = deser(fs::read_to_string(&config_path_new).expect("Could not read config file")).expect("Could not parse config contents");
     //
     //     let entry_type = ui.get_type();
     //
@@ -659,6 +1080,6 @@ fn main() {
     //     }
     }
     //
-    // println!("Work Expense: {}", report.total("work", true));
-    // println!("Personal Expense: {}", report.total("personal", true));
+    println!("Personal Expense: {}", report.total_personal());
+    println!("Work Expense: {}", report.total_work());
 }
