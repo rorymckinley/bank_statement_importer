@@ -1220,7 +1220,7 @@ fn main() {
                     category: category,
                     description: entry.description,
                     amount: entry.amount,
-                    entry_type: if assign_as_expense { EntryType::Income } else { EntryType::Transfer },
+                    entry_type: if assign_as_expense { EntryType::Expense } else { EntryType::Transfer },
                     date: entry.date
                 }
             },
@@ -1254,7 +1254,7 @@ fn main() {
             }
         };
 
-        // println!("{:?}", cat_entry);
+        //println!("CAT ENTRY {:?}", cat_entry);
         report.entries.push(cat_entry);
 
         // TODO Find  better way to do this
