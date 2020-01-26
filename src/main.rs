@@ -491,6 +491,12 @@ struct CategorisedEntry {
     date: NaiveDate
 }
 
+impl std::fmt::Display for CategorisedEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.date, self.description, self.amount)
+    }
+}
+
 
 // Test Setup function
 fn create_expense(category: &str, description: &str, sphere: Sphere) -> CategorisedEntry {
@@ -530,6 +536,101 @@ fn create_transfer(category: &str, description: &str, sphere: Sphere) -> Categor
 struct ReportCategory<'a> {
     description: String,
     entries: Vec<&'a CategorisedEntry>
+}
+
+impl<'a> ReportCategory<'a> {
+    fn total_expenses(&self) -> Decimal {
+        // println!("?????????");
+        // println!("{}", self.description);
+        // println!("?????????");
+        let mut total = Decimal::from_str("0.00").expect("Setting initial total");
+
+        let mut iter = self.entries.iter();
+
+        loop {
+            if let Some(cat) = iter.next() {
+                // println!("ENTRY: {:?}", cat);
+                // println!("TOTAl BEFORE {}", total);
+                total = match &cat.entry_type {
+                    EntryType::Expense => {
+                        // println!("Expense {:?}", cat);
+                        // println!("Amount {}", cat.amount);
+                        total + cat.amount
+                    },
+                    _          => total
+                }
+            } else {
+                break;
+            }
+        }
+
+        total
+    }
+
+    fn total_income(&self) -> Decimal {
+        let mut total = Decimal::from_str("0.00").expect("Setting initial total");
+
+        let mut iter = self.entries.iter();
+
+        loop {
+            if let Some(cat) = iter.next() {
+                total = match &cat.entry_type {
+                    EntryType::Income => total + cat.amount,
+                    _          => total
+                }
+            } else {
+                break;
+            }
+        }
+
+        total
+    }
+
+    fn total_transfers(&self) -> Decimal {
+        let mut total = Decimal::from_str("0.00").expect("Setting initial total");
+
+        let mut iter = self.entries.iter();
+
+        loop {
+            if let Some(cat) = iter.next() {
+                total = match &cat.entry_type {
+                    EntryType::Transfer => total + cat.amount,
+                    _          => total
+                }
+            } else {
+                break;
+            }
+        }
+
+        total
+    }
+
+    fn expense_entries(&self) -> Vec<&CategorisedEntry> {
+        self.entries.iter().filter(|e| {
+            match e.entry_type {
+                EntryType::Expense => true,
+                _ => false
+            }
+        }).map(|e| *e).collect()
+    }
+
+    fn income_entries(&self) -> Vec<&CategorisedEntry> {
+        self.entries.iter().filter(|e| {
+            match e.entry_type {
+                EntryType::Income => true,
+                _ => false
+            }
+        }).map(|e| *e).collect()
+    }
+
+    fn transfer_entries(&self) -> Vec<&CategorisedEntry> {
+        self.entries.iter().filter(|e| {
+            match e.entry_type {
+                EntryType::Transfer => true,
+                _ => false
+            }
+        }).map(|e| *e).collect()
+    }
 }
 
 #[test]
@@ -618,6 +719,129 @@ fn test_translate_activity_report_into_categorised_activity_report() {
                    )
               );
 }
+
+#[test]
+fn report_category_displays_total() {
+    let expense_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("100.00").unwrap(),
+        description: "p_e_1".into(),
+        entry_type: EntryType::Expense,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let expense_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("50.00").unwrap(),
+        description: "p_e_2".into(),
+        entry_type: EntryType::Expense,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let income_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("1.00").unwrap(),
+        description: "i_1".into(),
+        entry_type: EntryType::Income,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let income_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("2.00").unwrap(),
+        description: "i_2".into(),
+        entry_type: EntryType::Income,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let transfer_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("2000.00").unwrap(),
+        description: "t_1".into(),
+        entry_type: EntryType::Transfer,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let transfer_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("1000.00").unwrap(),
+        description: "t_2".into(),
+        entry_type: EntryType::Transfer,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+
+    let category = ReportCategory {
+        description: "foo".into(),
+        entries: vec![&transfer_one, &income_one, &expense_one, &income_two, &transfer_two, &expense_two],
+    };
+
+    assert_eq!(Decimal::from_str("150.00").unwrap(), category.total_expenses());
+    assert_eq!(Decimal::from_str("3.00").unwrap(), category.total_income());
+    assert_eq!(Decimal::from_str("3000.00").unwrap(), category.total_transfers());
+}
+
+#[test]
+fn return_category_entries() {
+    let expense_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("100.00").unwrap(),
+        description: "p_e_1".into(),
+        entry_type: EntryType::Expense,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let expense_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("50.00").unwrap(),
+        description: "p_e_2".into(),
+        entry_type: EntryType::Expense,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let income_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("1.00").unwrap(),
+        description: "i_1".into(),
+        entry_type: EntryType::Income,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let income_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("2.00").unwrap(),
+        description: "i_2".into(),
+        entry_type: EntryType::Income,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let transfer_one = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("2000.00").unwrap(),
+        description: "t_1".into(),
+        entry_type: EntryType::Transfer,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+    let transfer_two = CategorisedEntry {
+        sphere: Sphere::Personal,
+        category: "foo".into(),
+        amount: Decimal::from_str("1000.00").unwrap(),
+        description: "t_2".into(),
+        entry_type: EntryType::Transfer,
+        date: NaiveDate::from_ymd(2019,11,1)
+    };
+
+    let category = ReportCategory {
+        description: "foo".into(),
+        entries: vec![&transfer_one, &income_one, &expense_one, &income_two, &transfer_two, &expense_two],
+    };
+
+    assert_eq!(vec![&expense_one, &expense_two], category.expense_entries());
+    assert_eq!(vec![&income_one, &income_two], category.income_entries());
+    assert_eq!(vec![&transfer_one, &transfer_two], category.transfer_entries())
+}
+
 
 #[derive(Debug, PartialEq)]
 struct CategorisedActivityReport<'a> {
@@ -914,7 +1138,7 @@ fn main() {
 
         };
 
-        println!("{:?}", classification);
+        // println!("{:?}", classification);
         let cat_entry = match classification {
             Classification::ExistingPattern(pattern, pattern_override_option) => {
                 let sphere = match pattern_override_option {
@@ -1030,7 +1254,7 @@ fn main() {
             }
         };
 
-        println!("{:?}", cat_entry);
+        // println!("{:?}", cat_entry);
         report.entries.push(cat_entry);
 
         // TODO Find  better way to do this
@@ -1038,48 +1262,72 @@ fn main() {
 
         fs::write(&config_path_new, serialise(&new_config.export())).expect("Could not write config file");
         new_config = deser(fs::read_to_string(&config_path_new).expect("Could not read config file")).expect("Could not parse config contents");
-    //
-    //     let entry_type = ui.get_type();
-    //
-    //     let selected_category = match config.match_category(entry_type, entry.get(1).unwrap()) {
-    //         Some(c) => {
-    //             ui.display_automap(&c.name);
-    //             c.name.clone()
-    //         },
-    //         None => {
-    //                 if entry_type == "personal" {
-    //                     ui.display_categories("personal", &config.personal_categories());
-    //                 } else {
-    //                     ui.display_categories("work", &config.work_categories());
-    //                 }
-    //
-    //                 let category = ui.capture_category();
-    //
-    //                 config.add_category(entry_type, category.trim());
-    //
-    //                 if let Some(pattern) = ui.capture_pattern() {
-    //                     let category = config.find_cat(entry_type, category.trim());
-    //                     category.patterns.push(String::from(pattern));
-    //                 }
-    //
-    //                 fs::write(&config_path, serialise(&config.export())).expect("Could not write config file");
-    //
-    //                 config = deserialise(fs::read_to_string(&config_path).expect("Could not read config file")).expect("Could not parse config contents");
-    //
-    //                 category
-    //         }
-    //     };
-    //
-    //     if entry_type == "personal" && config.personal_categories().contains(&String::from(selected_category.trim())) {
-    //         report.add_entry(entry_type, selected_category.trim(), &entry);
-    //     } else if entry_type == "work" && config.work_categories().contains(&String::from(selected_category.trim())) {
-    //         report.add_entry(entry_type, selected_category.trim(), &entry);
-    //     } else {
-    //         println!("Category {} does not exist", selected_category);
-    //         exit(3);
-    //     }
     }
-    //
+
+    println!("");
+    println!("REPORT");
+    println!("");
+
     println!("Personal Expense: {}", report.total_personal());
     println!("Work Expense: {}", report.total_work());
+
+    let cat_report = CategorisedActivityReport::new(&report, &new_config.categories);
+
+    println!("Categorised Personal Expenses");
+    println!("-----------------------------");
+
+    let mut personal_iter = cat_report.personal.iter();
+
+    loop {
+        if let Some(cat) = personal_iter.next() {
+            println!("");
+            println!("{} {}", cat.description, cat.total_expenses());
+            println!("********************************************");
+
+            let mut entry_iter = cat.entries.iter();
+
+            loop {
+                if let Some(entry) = entry_iter.next() {
+                    println!("{}", entry);
+                } else {
+                    break;
+                }
+            }
+
+        } else {
+            break;
+        }
+    }
+
+    println!("");
+    println!("");
+
+    let cat_report = CategorisedActivityReport::new(&report, &new_config.categories);
+
+    println!("Categorised Work Expenses");
+    println!("-----------------------------");
+
+    let mut work_iter = cat_report.work.iter();
+
+    loop {
+        if let Some(cat) = work_iter.next() {
+            println!("");
+            println!("{} {}", cat.description, cat.total_expenses());
+            println!("********************************************");
+
+            let mut entry_iter = cat.entries.iter();
+
+            loop {
+                if let Some(entry) = entry_iter.next() {
+                    println!("{}", entry);
+                } else {
+                    break;
+                }
+            }
+
+        } else {
+            break;
+        }
+    }
+    // cat_report.display_personal_expenses
 }
