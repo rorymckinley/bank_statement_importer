@@ -1284,10 +1284,11 @@ fn main() {
             println!("{} {}", cat.description, cat.total_expenses());
             println!("********************************************");
 
-            let mut entry_iter = cat.entries.iter();
+            let expense_entries = cat.expense_entries();
+            let mut e_e_iter = expense_entries.iter();
 
             loop {
-                if let Some(entry) = entry_iter.next() {
+                if let Some(entry) = e_e_iter.next() {
                     println!("{}", entry);
                 } else {
                     break;
@@ -1315,10 +1316,11 @@ fn main() {
             println!("{} {}", cat.description, cat.total_expenses());
             println!("********************************************");
 
-            let mut entry_iter = cat.entries.iter();
+            let expense_entries = cat.expense_entries();
+            let mut e_e_iter = expense_entries.iter();
 
             loop {
-                if let Some(entry) = entry_iter.next() {
+                if let Some(entry) = e_e_iter.next() {
                     println!("{}", entry);
                 } else {
                     break;
