@@ -17,113 +17,6 @@ use std::str::FromStr;
 use sha2::{Sha256, Digest};
 use bank_statement_importer::{ActivityReport, CategorisedActivityReport, EntryType, CategorisedEntry, Sphere};
 
-#[test]
-fn test_category_equality() {
-    assert_eq!(
-        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
-        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
-               );
-
-    assert_ne!(
-        Category {name: String::from("baz"), patterns: vec![String::from("bar")]},
-        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
-               );
-
-    assert_ne!(
-        Category {name: String::from("foo"), patterns: vec![String::from("baz")]},
-        Category {name: String::from("foo"), patterns: vec![String::from("bar")]},
-               );
-}
-
-#[derive(Debug)]
-struct Category {
-    name: String,
-    patterns: Vec<String>
-}
-
-impl Category {
-    fn matches_description(&self, description: &str) -> bool {
-        let desc = String::from(description);
-        let mut iter = self.patterns.iter().filter(|p| desc.contains(&p[..]) );
-
-        match iter.next() {
-            Some(_) => true,
-            None => false
-        }
-    }
-}
-
-impl PartialEq for Category {
-    fn eq(&self, other: &Category) -> bool {
-        self.name == other.name && self.patterns == other.patterns
-    }
-}
-
-#[test]
-fn test_adding_categories_to_catalogue() {
-    let mut catalogue = CategoryCatalogue { categories: Vec::new() };
-
-    catalogue.add_category("foo");
-    assert_eq!(catalogue.categories, vec![Category { name: String::from("foo"), patterns: Vec::new() }]);
-
-    catalogue.add_category("bar");
-    assert_eq!(
-        catalogue.categories,
-        vec![
-            Category { name: String::from("foo"), patterns: Vec::new() },
-            Category { name: String::from("bar"), patterns: Vec::new() },
-        ]);
-
-    catalogue.add_category("foo");
-    assert_eq!(
-        catalogue.categories,
-        vec![
-            Category { name: String::from("foo"), patterns: Vec::new() },
-            Category { name: String::from("bar"), patterns: Vec::new() },
-        ]);
-}
-
-struct CategoryCatalogue {
-    categories: Vec<Category>
-}
-
-impl CategoryCatalogue {
-    fn new(categories: &Vec<Yaml>, patterns: &LinkedHashMap<Yaml, Yaml>) -> CategoryCatalogue {
-        let mut catalogue_categories = Vec::new();
-        for c in categories {
-            let cat = c.as_str().unwrap();
-            let mut cat_patterns = Vec::new();
-            for p in patterns[c].as_vec().unwrap().iter() {
-                cat_patterns.push(String::from(p.as_str().unwrap()))
-            }
-            let category = Category { name: String::from(cat), patterns: cat_patterns };
-            catalogue_categories.push(category);
-        }
-        CategoryCatalogue {
-            categories: catalogue_categories
-        }
-    }
-
-    fn add_category(&mut self, category: &str) {
-        if !self.category_exists(category) {
-            self.categories.push(Category { name: String::from(category), patterns: Vec::new() });
-        }
-    }
-
-    fn category_exists(&self, category: &str) -> bool {
-        let mut iter = self.categories.iter().filter(|c| c.name == category);
-
-        match iter.next() {
-            Some(_) => true,
-            None => false
-        }
-    }
-
-    fn find_cat(&mut self, category: &str) -> &mut Category{
-        let mut iter = self.categories.iter_mut().filter(|x| x.name == category);
-        iter.next().unwrap()
-    }
-}
 
 #[test]
 fn test_creating_config_template() {
@@ -132,7 +25,7 @@ fn test_creating_config_template() {
     expected.insert(Yaml::from_str("inbound_patterns"), Yaml::Array(Vec::new()));
     expected.insert(Yaml::from_str("outbound_patterns"), Yaml::Array(Vec::new()));
 
-    assert_eq!(Yaml::Hash(expected), Config::template());
+    assert_eq!(Yaml::Hash(expected), NewConfig::template());
 }
 
 #[derive(Debug)]
@@ -360,96 +253,12 @@ impl NewConfig {
 
         Yaml::Hash(config)
     }
-}
-
-struct Config {
-    personal: CategoryCatalogue,
-    work: CategoryCatalogue
-}
-
-impl Config {
-    fn new(contents: LinkedHashMap<Yaml, Yaml>) -> Config {
-        let categories = contents[&Yaml::from_str("categories")].as_hash().unwrap();
-        let patterns = contents[&Yaml::from_str("patterns")].as_hash().unwrap();
-        Config {
-            personal: CategoryCatalogue::new(
-                          categories[&Yaml::from_str("personal")].as_vec().unwrap(),
-                          patterns[&Yaml::from_str("personal")].as_hash().unwrap(),
-                          ),
-            work: CategoryCatalogue::new(
-                          categories[&Yaml::from_str("work")].as_vec().unwrap(),
-                          patterns[&Yaml::from_str("work")].as_hash().unwrap(),
-                          ),
-        }
-    }
-
-    fn personal_categories(&self) -> Vec<String> {
-        self.personal.categories.iter().map(|x| x.name.clone()).collect()
-    }
-
-    fn work_categories(&self) -> Vec<String> {
-        self.work.categories.iter().map(|x| x.name.clone()).collect()
-    }
-
-    fn find_cat(&mut self, entry_type: &str, category: &str) -> &mut Category {
-        if entry_type == "personal" {
-            self.personal.find_cat(category)
-        } else {
-            self.work.find_cat(category)
-        }
-    }
-
-    fn match_category(&self, entry_type: &str, entry: &str) -> Option<&Category> {
-        let cats = if entry_type == "personal" {
-            &self.personal.categories
-        } else {
-            &self.work.categories
-        };
-
-        let mut iter = cats.iter().filter(|c| c.matches_description(entry));
-        iter.next()
-    }
-
-    fn add_category(&mut self, entry_type: &str, category: &str) {
-        if entry_type == "personal" {
-            &self.personal.add_category(category);
-        } else {
-            &self.work.add_category(category);
-        }
-    }
 
     fn template() -> Yaml {
         let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
         config.insert(Yaml::from_str("categories"), Yaml::Array(Vec::new()));
         config.insert(Yaml::from_str("inbound_patterns"), Yaml::Array(Vec::new()));
         config.insert(Yaml::from_str("outbound_patterns"), Yaml::Array(Vec::new()));
-        Yaml::Hash(config)
-    }
-
-    fn export(&self) -> Yaml {
-        let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-        let mut new_categories: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-        let mut personal_categories = Vec::new();
-        let mut work_categories = Vec::new();
-        let mut patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-        let mut personal_patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-        let mut work_patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-        for cat in self.personal.categories.iter()  {
-            personal_categories.push(Yaml::from_str(&cat.name));
-            let patterns: Vec<Yaml> = cat.patterns.iter().map(|x| Yaml::from_str(x)).collect();
-            personal_patterns.insert(Yaml::from_str(&cat.name), Yaml::Array(patterns));
-        }
-        for cat in self.work.categories.iter()  {
-            work_categories.push(Yaml::from_str(&cat.name));
-            let patterns: Vec<Yaml> = cat.patterns.iter().map(|x| Yaml::from_str(x)).collect();
-            work_patterns.insert(Yaml::from_str(&cat.name), Yaml::Array(patterns));
-        }
-        new_categories.insert(Yaml::from_str("personal"), Yaml::Array(personal_categories));
-        new_categories.insert(Yaml::from_str("work"), Yaml::Array(work_categories));
-        patterns.insert(Yaml::from_str("personal"), Yaml::Hash(personal_patterns));
-        patterns.insert(Yaml::from_str("work"), Yaml::Hash(work_patterns));
-        config.insert(Yaml::from_str("categories"), Yaml::Hash(new_categories));
-        config.insert(Yaml::from_str("patterns"), Yaml::Hash(patterns));
         Yaml::Hash(config)
     }
 }
@@ -466,19 +275,6 @@ enum Classification<'a> {
     NewPatternOutbound {snippet: String, category: String, assign_as_expense: bool, assign_as_personal: bool, require_confirmation: bool },
     NoPatternInbound {category: String, assign_as_income: bool},
     NoPatternOutbound {category: String, assign_as_expense: bool, assign_as_personal: bool}
-}
-
-fn config_template() -> Yaml {
-    let mut config: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-    let mut patterns: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-    let mut types: LinkedHashMap<Yaml, Yaml> = LinkedHashMap::new();
-    types.insert(Yaml::from_str("personal"), Yaml::Array(Vec::new()));
-    types.insert(Yaml::from_str("work"), Yaml::Array(Vec::new()));
-    patterns.insert(Yaml::from_str("personal"), Yaml::Hash(LinkedHashMap::new()));
-    patterns.insert(Yaml::from_str("work"), Yaml::Hash(LinkedHashMap::new()));
-    config.insert(Yaml::from_str("categories"), Yaml::Hash(types));
-    config.insert(Yaml::from_str("patterns"), Yaml::Hash(patterns));
-    Yaml::Hash(config)
 }
 
 fn serialise(structure: &Yaml) -> String {
@@ -519,7 +315,7 @@ fn main() {
     if config_path_new.exists() {
         println!("Config exists at {:?}", config_path_new);
     } else {
-        fs::write(&config_path_new, serialise(&Config::template())).expect("Could not write new config file");
+        fs::write(&config_path_new, serialise(&NewConfig::template())).expect("Could not write new config file");
         println!("Config created at {:?}", config_path_new);
     }
 
