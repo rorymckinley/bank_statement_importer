@@ -292,6 +292,7 @@ fn deserialise(contents: String) -> Result<NewConfig, ScanError> {
 }
 
 fn get_date_boundaries(start_date_string: &str) -> Result<(NaiveDate, NaiveDate), ParseError> {
+    println!("START DATE: {}", start_date_string);
     let start_date = NaiveDate::parse_from_str(start_date_string, "%Y%m%d")?;
 
     let (end_date_y, end_date_m) = if start_date.month() == 12 {
