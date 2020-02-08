@@ -1,9 +1,11 @@
+use std::{env, fs};
 use std::process::Command;
 use csv::Writer;
 use assert_cmd::prelude::*;
 use assert_fs::prelude::*;
 use rexpect::session::spawn_command;
 use rexpect::errors::*;
+use serde::{Deserialize, Serialize};
 
 #[test]
 fn test_happy_day_empty_config() {
@@ -21,7 +23,6 @@ fn test_happy_day_empty_config() {
     let mut instructions = first_batch_of_instructions();
     instructions.extend(second_batch_of_instructions());
 
-    
     for instruction in instructions {
         println!("{}", instruction.entry);
         p.exp_regex(&instruction.entry).expect("Entry");
@@ -111,6 +112,104 @@ fn test_happy_day_empty_config() {
             }
         }
     }
+
+    p.exp_regex("Personal Expense: 2129.75").expect("Personal Total");
+    p.exp_regex("Work Expense: 1809.32").expect("Work total");
+    p.exp_regex("Categorised Personal Expenses").expect("Personal Expenses Heading");
+
+    p.exp_regex("books 1222.21").expect("Books total");
+    p.exp_regex("2019-12-01 Fake Bookshop 333.33").expect("First personal book entry");
+    p.exp_regex("2019-12-01 Fake Bookshop 333.33").expect("Second personal book entry");
+    p.exp_regex("2019-12-12 Fake Bookshop 555.55").expect("Second personal book entry");
+
+    p.exp_regex("salary 0.00").expect("Salary total");
+
+    p.exp_regex("groceries 312.32").expect("Groceries total");
+    p.exp_regex("2019-12-03 Fake Supermarket 123.45").expect("First personal grocery entry");
+    p.exp_regex("2019-12-09 Ad Hoc 3 99.99").expect("Second personal grocery entry");
+    p.exp_regex("2019-12-13 Fake Supermarket 88.88").expect("Third personal grocery entry");
+
+    p.exp_regex("transfer 0.00").expect("Transfer total");
+
+    p.exp_regex("saas 595.22").expect("Personal SAAS total");
+    p.exp_regex("2019-12-17 SAAS as a service 595.22").expect("First Personal SAAS entry");
+
+    p.exp_regex("lottery 0.00").expect("Lottery total");
+
+    p.exp_regex("Categorised Work Expenses").expect("Work Expense Heading");
+
+    p.exp_regex("books 444.44").expect("Work books total");
+    p.exp_regex("2019-12-11 Fake Bookshop 444.44").expect("First work book entry");
+
+    p.exp_regex("saas 1364.88").expect("Work SAAS total");
+    p.exp_regex("2019-12-04 SAAS as a service 253.77").expect("Work SAAS first entry");
+    p.exp_regex("2019-12-10 Ad Hoc 4 1111.11").expect("Work SAAS second entry");
+
+    let categories = vec![
+        "books".into(),
+        "salary".into(),
+        "groceries".into(),
+        "transfer".into(),
+        "saas".into(),
+        "lottery".into(),
+    ];
+
+    let inbound_patterns = vec![
+        ExpectedInboundPattern {
+            snippet: "Salary".into(),
+            category: "salary".into(),
+            assign_as_income: true
+        },
+        ExpectedInboundPattern {
+            snippet: "Transfer In".into(),
+            category: "transfer".into(),
+            assign_as_income: false
+        },
+    ];
+
+    let outbound_patterns = vec![
+        ExpectedOutboundPattern {
+            snippet: "Fake Bookshop".into(),
+            assign_as_expense: true,
+            assign_as_personal: true,
+            category: "books".into(),
+            require_confirmation: true
+        },
+        ExpectedOutboundPattern {
+            snippet: "Fake Supermarket".into(),
+            assign_as_expense: true,
+            assign_as_personal: true,
+            category: "groceries".into(),
+            require_confirmation: false
+        },
+        ExpectedOutboundPattern {
+            snippet: "SAAS".into(),
+            assign_as_expense: true,
+            assign_as_personal: false,
+            category: "saas".into(),
+            require_confirmation: true
+        },
+        ExpectedOutboundPattern {
+            snippet: "Transfer Out".into(),
+            assign_as_expense: false,
+            assign_as_personal: true,
+            category: "transfer".into(),
+            require_confirmation: false
+        },
+    ];
+
+    let expected_config = ExpectedConfig {
+        categories,
+        inbound_patterns,
+        outbound_patterns,
+    };
+
+    let created_config: ExpectedConfig = serde_yaml::from_str(
+        &fs::read_to_string(config_file.path()).expect("Read config into file")
+        ).expect("Deserialising config");
+
+    assert_eq!(expected_config, created_config);
+    // println!("{:?}", serde_yaml::to_string(&expected_config));
 }
 
 fn setup_fixtures(storage: &assert_fs::fixture::TempDir) {
@@ -251,7 +350,7 @@ fn first_batch_of_instructions() -> Vec<Instruction> {
             personal: false,
             create_pattern: true,
             snippet: Some("SAAS".into()),
-            require_confirmation: false,
+            require_confirmation: true,
             matches_existing_pattern: false,
             existing_pattern_is_personal: false,
             override_pattern_assignment: false,
@@ -494,9 +593,9 @@ fn second_batch_of_instructions() -> Vec<Instruction> {
             category: "saas".into(),
             transfer: false,
             personal: false,
-            create_pattern: true,
+            create_pattern: false,
             snippet: None,
-            require_confirmation: false,
+            require_confirmation: true,
             matches_existing_pattern: true,
             existing_pattern_is_personal: false,
             override_pattern_assignment: true,
@@ -504,4 +603,27 @@ fn second_batch_of_instructions() -> Vec<Instruction> {
             discard: false
         },
     ]
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct ExpectedConfig {
+    categories: Vec<String>,
+    inbound_patterns: Vec<ExpectedInboundPattern>,
+    outbound_patterns: Vec<ExpectedOutboundPattern>
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct ExpectedInboundPattern {
+    snippet: String,
+    category: String,
+    assign_as_income: bool,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct ExpectedOutboundPattern {
+    snippet: String,
+    category: String,
+    assign_as_expense: bool,
+    assign_as_personal: bool,
+    require_confirmation: bool
 }
