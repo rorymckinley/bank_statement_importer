@@ -4,6 +4,7 @@ use chrono::{NaiveDate, Datelike};
 
 pub mod ui_choices;
 pub mod entry_manager;
+pub mod config;
 
 pub mod report {
     use csv::StringRecord;
