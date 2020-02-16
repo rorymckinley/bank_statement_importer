@@ -2,6 +2,8 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 use chrono::{NaiveDate, Datelike};
 
+pub mod ui_choices;
+
 pub mod report {
     use csv::StringRecord;
     use chrono::NaiveDate;

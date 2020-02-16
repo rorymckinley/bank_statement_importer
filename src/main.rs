@@ -263,12 +263,12 @@ impl NewConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct PatternOverride {
     is_personal: bool
 }
 
-#[ derive(Debug) ]
+#[ derive(Debug, PartialEq) ]
 enum Classification<'a> {
     ExistingPattern(&'a Pattern, Option<PatternOverride>),
     NewPatternInbound {snippet: String, category: String, assign_as_income: bool},
@@ -306,6 +306,434 @@ fn get_date_boundaries(start_date_string: &str) -> Result<(NaiveDate, NaiveDate)
     Ok((start_date, end_date))
 }
 
+struct UiChoices<'a> {
+    existing_pattern: Option<&'a Pattern>,
+    pattern_override: Option<PatternOverride>,
+    category: Option<String>,
+    transfer: Option<bool>,
+    sphere: Option<Sphere>,
+    create_pattern: Option<bool>,
+    snippet: Option<String>,
+    require_confirmation: Option<bool>
+    // new_category: Option<bool>,
+}
+
+#[test]
+fn test_create_classification_from_choices_existing_pattern_override() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let pattern = Pattern::Inbound { snippet: "foo".into(), category: "baz".into(), assign_as_income: true };
+    let expected_output = Classification::ExistingPattern(&pattern, Some(PatternOverride {is_personal: true}));
+    let choices = UiChoices {
+        existing_pattern: Some(&pattern),
+        pattern_override: Some(PatternOverride {is_personal: true}),
+        category: None,
+        transfer: None,
+        sphere: None,
+        create_pattern: None,
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_existing_pattern_no_override() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let pattern = Pattern::Inbound { snippet: "foo".into(), category: "baz".into(), assign_as_income: true };
+    let expected_output = Classification::ExistingPattern(&pattern, None);
+    let choices = UiChoices {
+        existing_pattern: Some(&pattern),
+        pattern_override: None,
+        category: None,
+        transfer: None,
+        sphere: None,
+        create_pattern: None,
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_inbound_pattern_assign_as_income() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternInbound {
+        snippet: "snip".into(), category: "foo".into(), assign_as_income: true
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(false)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_inbound_pattern_assign_as_transfer() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternInbound {
+        snippet: "snip".into(), category: "foo".into(), assign_as_income: false
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(true),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(false)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_outbound_pattern_personal_expense_requiring_confirmation() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternOutbound {
+        snippet: "snip".into(),
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: true,
+        require_confirmation: true
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(true)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_outbound_pattern_personal_expense_no_confirmation() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternOutbound {
+        snippet: "snip".into(),
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: true,
+        require_confirmation: false
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(false)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_outbound_pattern_personal_transfer() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternOutbound {
+        snippet: "snip".into(),
+        category: "foo".into(),
+        assign_as_expense: false,
+        assign_as_personal: true,
+        require_confirmation: false
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(true),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(false)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_outbound_pattern_work_expense_requires_confirmation() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternOutbound {
+        snippet: "snip".into(),
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: false,
+        require_confirmation: true
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Work),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(true)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_new_outbound_pattern_work_expense_no_confirmation() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NewPatternOutbound {
+        snippet: "snip".into(),
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: false,
+        require_confirmation: false
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Work),
+        create_pattern: Some(true),
+        snippet: Some("snip".into()),
+        require_confirmation: Some(false)
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_no_pattern_inbound_income() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NoPatternInbound {
+        category: "foo".into(),
+        assign_as_income: true,
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(false),
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_no_pattern_inbound_transfer() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NoPatternInbound {
+        category: "foo".into(),
+        assign_as_income: false,
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(true),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(false),
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_no_pattern_outbound_personal_expense() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NoPatternOutbound {
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: true,
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(false),
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_no_pattern_outbound_work_expense() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NoPatternOutbound {
+        category: "foo".into(),
+        assign_as_expense: true,
+        assign_as_personal: false,
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(false),
+        sphere: Some(Sphere::Work),
+        create_pattern: Some(false),
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+#[test]
+fn test_create_classification_from_choices_no_pattern_outbound_transfer() {
+    let entry = RawEntry::new(
+        StringRecord::from(vec!["  20191101  ", "  foo one bar  ", "  -191.60  ", "  200.00  "])
+    );
+    let expected_output = Classification::NoPatternOutbound {
+        category: "foo".into(),
+        assign_as_expense: false,
+        assign_as_personal: true,
+    };
+    let choices = UiChoices {
+        existing_pattern: None,
+        pattern_override: None,
+        category: Some("foo".into()),
+        transfer: Some(true),
+        sphere: Some(Sphere::Personal),
+        create_pattern: Some(false),
+        snippet: None,
+        require_confirmation: None
+    };
+    assert_eq!(
+        expected_output,
+        create_classification_from_choices(entry.direction, choices)
+    )
+}
+
+fn create_classification_from_choices(direction: Direction, choices: UiChoices) -> Classification {
+    match choices.existing_pattern {
+        Some(pattern) => {
+            Classification::ExistingPattern(pattern, choices.pattern_override)
+        },
+        _ => {
+            match direction {
+                Direction::Inbound => {
+                    match choices.create_pattern.unwrap() {
+                        true => {
+                            Classification::NewPatternInbound {
+                                snippet: choices.snippet.unwrap(),
+                                category: choices.category.unwrap(),
+                                assign_as_income: !choices.transfer.unwrap()
+                            }
+                        },
+                        false => {
+                            Classification::NoPatternInbound {
+                                category: choices.category.unwrap(),
+                                assign_as_income: !choices.transfer.unwrap()
+                            }
+                        }
+                    }
+                },
+                Direction::Outbound => {
+                    match choices.create_pattern.unwrap() {
+                        true => {
+                            Classification::NewPatternOutbound {
+                                snippet: choices.snippet.unwrap(),
+                                category: choices.category.unwrap(),
+                                assign_as_expense: !choices.transfer.unwrap(),
+                                assign_as_personal: match choices.sphere.unwrap() {
+                                    Sphere::Personal => true,
+                                    Sphere::Work => false,
+                                },
+                                require_confirmation: choices.require_confirmation.unwrap()
+                            }
+                        },
+                        false => {
+                            Classification::NoPatternOutbound {
+                                assign_as_expense: !choices.transfer.unwrap(),
+                                assign_as_personal: match choices.sphere.unwrap() {
+                                    Sphere::Personal => true,
+                                    Sphere::Work => false,
+                                },
+                                category: choices.category.unwrap(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 fn main() {
     // new
@@ -357,117 +785,111 @@ fn main() {
             }
         }
 
-        let classification = match new_config.find_pattern(&entry) {
-            Some(p) => {
-                match p {
-                    Pattern::Inbound { snippet, category, assign_as_income } => Classification::ExistingPattern(&p, None),
-                    Pattern::Outbound  { snippet, category, assign_as_expense, assign_as_personal, require_confirmation } => {
-                        let sphere_override = match require_confirmation {
-                            true => {
-                                match ui.sphere_override(assign_as_personal) {
-                                    true => Some(PatternOverride { is_personal: !assign_as_personal }),
-                                    false => None,
-                                }
+        let mut choices = UiChoices {
+            existing_pattern: None,
+            pattern_override: None,
+            category: None,
+            transfer: None,
+            sphere: None,
+            create_pattern: None,
+            snippet: None,
+            require_confirmation: None
+        };
+
+        if let Some(p) = new_config.find_pattern(&entry) {
+            choices.existing_pattern = Some(p);
+            match p {
+                Pattern::Outbound {
+                    snippet: _, category: _, assign_as_expense: _, assign_as_personal, require_confirmation
+                } => {
+                    if *require_confirmation {
+                        choices.pattern_override  = match ui.sphere_override(assign_as_personal) {
+                                true => Some(PatternOverride { is_personal: !assign_as_personal }),
+                                false => None,
                             }
-                            false => None
                         };
-                        Classification::ExistingPattern(&p, sphere_override)
-                    }
-                }
-            },
-            None => {
-                let is_personal: Option<bool>;
-                ui.display_categories(&new_config.categories);
-
-                let category = ui.capture_category(&new_config.categories);
-
-                let is_transfer = ui.is_transfer();
-                let sphere = match is_transfer {
-                    true => {
-                        Sphere::Personal
                     },
-                    false => {
+                _ => ()
+            }
+        } else {
+            ui.display_categories(&new_config.categories);
+            choices.category = Some(ui.capture_category(&new_config.categories));
+            choices.transfer = Some(ui.is_transfer());
+
+            choices.sphere = match choices.transfer {
+                Some(transfer) => {
+                    if transfer {
+                        Some(Sphere::Personal)
+                    } else {
                         match entry.direction {
                             Direction::Outbound => {
                                 match ui.is_personal() {
-                                    true => Sphere::Personal,
-                                    false => Sphere::Work
+                                    true => Some(Sphere::Personal),
+                                    false => Some(Sphere::Work)
                                 }
                             },
                             Direction::Inbound => {
-                                Sphere::Personal
+                                Some(Sphere::Personal)
                             }
                         }
                     }
-                };
+                },
+                None => None
+            };
+            // choices.sphere = match choices.transfer {
+            //     true => {
+            //         Some(Sphere::Personal)
+            //     },
+            //     false => {
+            //         match entry.direction {
+            //             Direction::Outbound => {
+            //                 match ui.is_personal() {
+            //                     true => Some(Sphere::Personal),
+            //                     false => Some(Sphere::Work)
+            //                 }
+            //             },
+            //             Direction::Inbound => {
+            //                 Some(Sphere::Personal)
+            //             }
+            //         }
+            //     }
+            // };
 
-                let create_pattern = ui.create_pattern();
+            choices.create_pattern = Some(ui.create_pattern());
 
-                match create_pattern {
-                    false => {
-                        match entry.direction {
-                            Direction::Outbound => {
-                                Classification::NoPatternOutbound {
-                                    category: category,
-                                    assign_as_expense: !is_transfer,
-                                    assign_as_personal: match sphere {
-                                        Sphere::Personal => true,
-                                        Sphere::Work => false
-                                    },
-                                }
-                            },
-                            Direction::Inbound => {
-                                Classification::NoPatternInbound {
-                                    category: category,
-                                    assign_as_income: !is_transfer,
-                                }
-                            }
-                        }
-                    },
-                    true => {
-                        let snippet = ui.snippet();
-                        let require_confirmation = match entry.direction {
-                            Direction::Inbound => false,
-                            Direction::Outbound => {
+            if let Some(create_pattern) = choices.create_pattern {
+                if create_pattern {
+                    choices.snippet = Some(ui.snippet());
+                    choices.require_confirmation = match entry.direction {
+                        Direction::Inbound => Some(false),
+                        Direction::Outbound => {
+                            if let Some(is_transfer) = choices.transfer {
                                 match is_transfer {
-                                    true => false,
+                                    true => Some(false),
                                     false => {
-                                        let is_personal = match sphere {
-                                            Sphere::Personal => true,
-                                            Sphere::Work => false
-                                        };
-                                        ui.require_confirmation(is_personal)
+                                        if let Some(sphere) = choices.sphere.clone() {
+                                            let is_personal = match sphere {
+                                                Sphere::Personal => true,
+                                                Sphere::Work => false
+                                            };
+                                            Some(ui.require_confirmation(is_personal))
+                                        } else {
+                                            Some(false)
+                                        }
                                     }
                                 }
-                            }
-                        };
-                        match entry.direction {
-                            Direction::Outbound => {
-                                Classification::NewPatternOutbound {
-                                    snippet: snippet,
-                                    category: category.clone(),
-                                    assign_as_expense: !is_transfer,
-                                    assign_as_personal: match sphere {
-                                        Sphere::Personal => true,
-                                        Sphere::Work => false
-                                    },
-                                    require_confirmation: require_confirmation
-                                }
-                            },
-                            Direction::Inbound => {
-                                Classification::NewPatternInbound {
-                                    snippet: snippet,
-                                    category: category,
-                                    assign_as_income: !is_transfer,
-                                }
+                            } else {
+                                None
                             }
                         }
-
-                    }
+                    };
                 }
             }
 
-        };
+        }
+
+
+        let classification = create_classification_from_choices(entry.direction, choices);
 
         let cat_entry = match classification {
             Classification::ExistingPattern(pattern, pattern_override_option) => {
