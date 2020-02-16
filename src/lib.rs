@@ -3,6 +3,7 @@ use std::str::FromStr;
 use chrono::{NaiveDate, Datelike};
 
 pub mod ui_choices;
+pub mod entry_manager;
 
 pub mod report {
     use csv::StringRecord;
